@@ -4,7 +4,6 @@ import (
 	"fmt"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"log"
-	"time"
 )
 
 // 连接信息
@@ -49,52 +48,7 @@ func (r *RabbitMQ) failOnErr(err error, message string) {
 	}
 }
 
-// 创建简单模式下的 RabbitMQ 实例
-func NewRabbitMQSimple(queueName string) *RabbitMQ {
-	// 创建 RabbitMQ 实例
-	rabbitmq := NewRabbitMQ(queueName, "", "") // 交换机和 key 的值都默认是空
-	var err error
-	// 获取 connection
-	rabbitmq.conn, err = amqp.Dial(rabbitmq.Mqurl)
-	// 获取 channel
-	rabbitmq.channel, err = rabbitmq.conn.Channel()
-	rabbitmq.failOnErr(err, "failed to open a channel")
-	return rabbitmq
-}
 
-// 简单模式队列生产
-func (r *RabbitMQ) PublishSimple(message string) {
-	// 申请队列，如果队列不存在，就制动创建，存在则跳过
-	_, err := r.channel.QueueDeclare(
-		r.QueueName,
-		// 是否持久化 【如果服务器重启，队列中的数据就没有了】
-		true,     // true 是持久化
-		//是否自动删除
-		false,
-		// 是否具有排他性
-		false,
-		// 是否具有阻塞处理
-		false,
-		// 额外的属性
-		nil,
-	)
-	if err != nil {
-		fmt.Println(err)
-	}
-	// 调用 channel 发送消息到队列中
-	r.channel.Publish(
-		r.Exchange,
-		r.QueueName,
-		//如果为true，根据自身exchange类型和routekey规则无法找到符合条件的队列会把消息返还给发送者
-		false,
-		//如果为true，当exchange发送消息到队列后发现队列上没有消费者，则会把消息返还给发送者
-		false,
-	amqp.Publishing{
-		DeliveryMode: amqp.Persistent,   // 持久
-		ContentType: "text/plain",
-		Body:        []byte(message),
-	})
-}
 
 func failOnError(err error, msg string) {
 	if err != nil {
@@ -102,63 +56,93 @@ func failOnError(err error, msg string) {
 	}
 }
 
-// simple 模式下消费者
-// 带应答信号，只有消费了，队列才会删除
-func (r *RabbitMQ) ConsumeSimple() {
-	//1.申请队列，如果队列不存在会自动创建，存在则跳过创建
+// 订阅模式创建 rabbitmq 实例
+func NewRabbitMQPubSub(queueName,exchangeName string) *RabbitMQ {
+	// 创建RabbitMQ 实例
+	rabbitmq := NewRabbitMQ(queueName, exchangeName, "")
+	var err error
+	// 获取 connection
+	rabbitmq.conn, err = amqp.Dial(rabbitmq.Mqurl)
+	rabbitmq.failOnErr(err, "failed to conect rabbitmq!")
+	// 获取 channel
+	rabbitmq.channel, err = rabbitmq.conn.Channel()
+	rabbitmq.failOnErr(err, "failed to open a channel")
+	return rabbitmq
+}
+
+
+
+// 发送 fanout
+func (r *RabbitMQ) PublishPub(message string) {
+	// 1、尝试创建交换机
+	fmt.Println("r.Exchange==>", r.Exchange)
+	err := r.channel.ExchangeDeclare(
+		r.Exchange,   // 使用命名的交换器
+		"fanout",     // 交换器类型
+		true,         // durable
+		false,        // auto-deleted
+		false,        // internal
+		false,        // no-wait
+		nil,          // arguments
+		)
+	r.failOnErr(err, "Failed to declare ")
+	// 2、发送消息
+	err = r.channel.Publish(
+		r.Exchange,
+		"",   // routing key
+		false, //
+		false,
+		amqp.Publishing{
+			ContentType: "text/plain",
+			Body: []byte(message),
+		},
+	)
+}
+
+// 消费端代码
+func (r *RabbitMQ) RecieveSub() {
+	fmt.Println("r.Exchange===>",r.Exchange)
+	// 1.试探性创建交换机
+	err := r.channel.ExchangeDeclare(
+		r.Exchange,   // 使用命名的交换器
+		"fanout",     // 交换器类型
+		true,         // durable
+		false,        // auto-deleted
+		false,        // internal
+		false,        // no-wait
+		nil,          // arguments
+	)
+	r.failOnErr(err, "failed to declare an exchange")
+	// 试探性创建队列，注意队列名称不要写
 	q, err := r.channel.QueueDeclare(
-		r.QueueName,
-		// 是否持久化
-		true,   // true 是持久化
-		//是否自动删除
+		"",   // 队列名称，随机产生队列名称
 		false,
-		// 是否具有排他性
 		false,
-		// 是否具有阻塞处理
+		true,
 		false,
-		// 额外的属性
 		nil,
 	)
-	err = r.channel.Qos(
-		1,     // 预取计数  这告诉RabbitMQ不要一次向一个worker发出多个消息
-		0,     // prefetch size
-		false, // global
-	)
-	if err != nil {
-		fmt.Println(err)
-	}
 
-	// 接收消息
-	// 返回的 msg 是一个 chanel, 是不停的接收来自客户端的消息
-	msgs, err := r.channel.Consume(q.Name, // queue
-		//用来区分多个消费者
-		"", // consumer
-		//是否自动应答
-		//true, // 不要手动应答
-		false, // 需要手动应该   这样
-		//是否独有
-		false, // exclusive
-		//设置为true，表示 不能将同一个Conenction中生产者发送的消息传递给这个Connection中 的消费者
-		false, // no-local
-		//列是否阻塞
-		false, // no-wait
-		nil)   // args)
+	// 交换机绑定到一个队列
+	fmt.Println("r.Exchange ==>", r.Exchange, "q.Name==>", q.Name)
+	err = r.channel.QueueBind(
+		q.Name,   // 队列的名称, 如果不指定会生成一个随机的队列
+		"",
+		r.Exchange,   // 交换器名称
+		false,
+		nil,
+		)
 
-	if err != nil {
-		fmt.Println(err)
-	}
+	r.failOnErr(err, "failed to declare a queue")
+	err = r.channel.QueueBind(q.Name, "", r.Exchange, false, nil)
+	// 消费模型
+	messages, err := r.channel.Consume(q.Name, "", true, false, false, false, nil)
 	forever := make(chan bool)
-	//启用协程处理消息
 	go func() {
-		for d := range msgs { // 这是一个死循环
-			//消息逻辑处理，可以自行设计逻辑
-			log.Printf("Received a message: %s", d.Body)
-			time.Sleep(2 * time.Second)
-			fmt.Println("完成任务")
-			d.Ack(false)
+		for d := range messages {
+			log.Printf("Received a message : %s", d.Body)
 		}
-		fmt.Println("消息处理完成")
 	}()
-	log.Printf(" [*] Waiting for messages. To exit press CTRL+C")
+	fmt.Println("请按出 ctrl + c\n")
 	<-forever
 }
