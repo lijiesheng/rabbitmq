@@ -119,6 +119,11 @@ func (r *RabbitMQ) ConsumeSimple() {
 		// 额外的属性
 		nil,
 	)
+	err = r.channel.Qos(
+		1,     // 预取计数  这告诉RabbitMQ不要一次向一个worker发出多个消息
+		0,     // prefetch size
+		false, // global
+	)
 	if err != nil {
 		fmt.Println(err)
 	}
