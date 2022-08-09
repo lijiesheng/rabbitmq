@@ -68,7 +68,7 @@ func (r *RabbitMQ) PublishSimple(message string) {
 	_, err := r.channel.QueueDeclare(
 		r.QueueName,
 		// 是否持久化 【如果服务器重启，队列中的数据就没有了】
-		false,
+		true,     // true 是持久化
 		//是否自动删除
 		false,
 		// 是否具有排他性
@@ -89,10 +89,11 @@ func (r *RabbitMQ) PublishSimple(message string) {
 		false,
 		//如果为true，当exchange发送消息到队列后发现队列上没有消费者，则会把消息返还给发送者
 		false,
-		amqp.Publishing{
-			ContentType: "text/plain",
-			Body:        []byte(message),
-		})
+	amqp.Publishing{
+		DeliveryMode: amqp.Persistent,   // 持久
+		ContentType: "text/plain",
+		Body:        []byte(message),
+	})
 }
 
 func failOnError(err error, msg string) {
@@ -108,7 +109,7 @@ func (r *RabbitMQ) ConsumeSimple() {
 	q, err := r.channel.QueueDeclare(
 		r.QueueName,
 		// 是否持久化
-		false,
+		true,   // true 是持久化
 		//是否自动删除
 		false,
 		// 是否具有排他性
@@ -128,8 +129,8 @@ func (r *RabbitMQ) ConsumeSimple() {
 		//用来区分多个消费者
 		"", // consumer
 		//是否自动应答
-		true, // 不要手动应答
-		//false, // 需要手动应该   这样
+		//true, // 不要手动应答
+		false, // 需要手动应该   这样
 		//是否独有
 		false, // exclusive
 		//设置为true，表示 不能将同一个Conenction中生产者发送的消息传递给这个Connection中 的消费者
@@ -149,7 +150,7 @@ func (r *RabbitMQ) ConsumeSimple() {
 			log.Printf("Received a message: %s", d.Body)
 			time.Sleep(2 * time.Second)
 			fmt.Println("完成任务")
-			//d.Ack(false)
+			d.Ack(false)
 		}
 		fmt.Println("消息处理完成")
 	}()

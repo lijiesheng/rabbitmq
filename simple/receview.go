@@ -3,6 +3,6 @@ package main
 import "rabbitmq/lib"
 
 func main() {
-	rabbitMQ := lib.NewRabbitMQSimple("test1234")
+	rabbitMQ := lib.NewRabbitMQSimple("task_queue_333333")
 	rabbitMQ.ConsumeSimple()
 }
