@@ -63,76 +63,86 @@ func NewRabbitMQRouting(exchangeName string, routingKey string) *RabbitMQ {
 	return rabbitMQ
 }
 
-
-func failOnError(err error, msg string) {
-	if err != nil {
-		log.Panicf("%s: %s", msg, err)
-	}
-}
-
-//话题模式
-//创建RabbitMQ实例
-func NewRabbitMQTopic(exchangeName string, routingKey string) *RabbitMQ {
-	//创建RabbitMQ实例
-	rabbitmq := NewRabbitMQ("", exchangeName, routingKey)
-	var err error
-	// 获取 connection
-	rabbitmq.conn, err = amqp.Dial(rabbitmq.Mqurl)
-	rabbitmq.failOnErr(err, "failed to connect rabbitmq!")
-	//获取channel
-	rabbitmq.channel, err = rabbitmq.conn.Channel()
-	rabbitmq.failOnErr(err, "failed to open a channel")
-	return rabbitmq
-}
-
-// 话题模式发送消息
-func (r *RabbitMQ) PublicTopic(message string) {
-	//1.尝试创建交换机
+func (r * RabbitMQ) RecieveRoutingList(str_list[]string) {
+	// 1、试探性创建交换机
 	err := r.channel.ExchangeDeclare(
-		r.Exchange,
-		//要改成topic
-		"topic",
+		r.Exchange, // 交换器名字
+		"direct",   // 交换器类型
+		true,       // durable
+		false,      // auto-deleted
+		false,      // internal
+		false,      // no-wait
+		nil)        // arguments
+	r.failOnErr(err, "Failed to declare an exchange")
+
+	// 2、试探性创建队列，队列不要写名字
+	q, err := r.channel.QueueDeclare(
+		"",
+		false,
+		false,
+		true,
+		false,
+		nil)
+	failOnError(err, "Failed to declare a queue")
+
+	str_list = append(str_list, r.Key)
+
+	for _, v := range str_list {
+		// 绑定多个
+		err = r.channel.QueueBind(
+			q.Name,
+			v,
+			r.Exchange,
+			false,
+			nil)
+	}
+
+	//消费消息
+	messges, err := r.channel.Consume(
+		q.Name,
+		"",
 		true,
 		false,
 		false,
 		false,
 		nil,
 	)
-	r.failOnErr(err, "Failed to declare an exchange")
-	//2.发送消息
-	err = r.channel.Publish(
-		r.Exchange,
-		//要设置
-		r.Key,
-		false,
-		false,
-		amqp.Publishing{
-			ContentType: "text/plain",
-			Body:        []byte(message),
-		})
+	forever := make(chan bool)
+	go func() {
+		for d := range messges {
+			log.Printf("Received a message: %s", d.Body)
+		}
+	}()
+	fmt.Println("退出请按 CTRL+C\n")
+	<-forever
 }
 
-//话题模式接受消息
-//要注意key,规则
-//其中“*”用于匹配一个单词，“#”用于匹配多个单词（可以是零个）
-//匹配 kuteng.* 表示匹配 kuteng.hello, kuteng.hello.one需要用kuteng.#才能匹配到
-func (r *RabbitMQ) RecieveTopic() {
-	//1.试探性创建交换机
-	r.channel.ExchangeDeclare(r.Exchange, "topic", true, false, false, false, nil)
-	//2.试探性创建队列，这里注意队列名称不要写
+func (r *RabbitMQ) RecieveRouting() {
+	// 1、试探性创建交换机
+	err := r.channel.ExchangeDeclare(
+		r.Exchange, // 交换器名字
+		"direct",   // 交换器类型
+		true,       // durable
+		false,      // auto-deleted
+		false,      // internal
+		false,      // no-wait
+		nil)        // arguments
+	r.failOnErr(err, "Failed to declare an exchange")
+
+	// 2、试探性创建队列，队列不要写名字
 	q, err := r.channel.QueueDeclare(
-		"", //随机生产队列名称
+		"",
 		false,
 		false,
 		true,
 		false,
-		nil,
-	)
-	r.failOnErr(err, "Failed to declare a queue")
-	//绑定队列到 exchange 中
+		nil)
+	failOnError(err, "Failed to declare a queue")
+
+	// 绑定多个
 	err = r.channel.QueueBind(
 		q.Name,
-		//在pub/sub模式下，这里的key要为空
+		//需要绑定key
 		r.Key,
 		r.Exchange,
 		false,
@@ -157,3 +167,86 @@ func (r *RabbitMQ) RecieveTopic() {
 	<-forever
 }
 
+
+func failOnError(err error, msg string) {
+	if err != nil {
+		log.Panicf("%s: %s", msg, err)
+	}
+}
+
+
+// 路由模式发送消息
+func (r *RabbitMQ) PublishRouting(message string) {
+	// 1、尝试创建交换机
+	err := r.channel.ExchangeDeclare(
+		r.Exchange,   // 交换器名称
+		"direct",     // 交换器类型
+		true,         // durable
+		false,        // auto-deleted
+		false,        // internal
+		false,        // no-wait
+		nil)          // arguments
+	r.failOnErr(err, "Failed to declare an exchange")
+	// 2、发送消息
+	r.channel.Publish(
+		r.Exchange,
+		r.Key,     //
+		false,
+		false,
+		amqp.Publishing{
+		ContentType: "text/plain",
+		Body:        []byte(message),
+	})
+}
+
+
+
+
+
+// 消费端代码
+func (r *RabbitMQ) RecieveSub(queueName string) {
+	fmt.Println("r.Exchange===>",r.Exchange)
+	// 1.试探性创建交换机
+	err := r.channel.ExchangeDeclare(
+		r.Exchange,   // 使用命名的交换器
+		"fanout",     // 交换器类型
+		true,         // durable
+		false,        // auto-deleted
+		false,        // internal
+		false,        // no-wait
+		nil,          // arguments
+	)
+	r.failOnErr(err, "failed to declare an exchange")
+	// 试探性创建队列，注意队列名称不要写
+	q, err := r.channel.QueueDeclare(
+		queueName,   // 队列名称，随机产生队列名称
+		false,
+		false,
+		true,
+		false,
+		nil,
+	)
+
+	// 交换机绑定到一个队列
+	fmt.Println("r.Exchange ==>", r.Exchange, "q.Name==>", q.Name)
+	err = r.channel.QueueBind(
+		q.Name,   // 队列的名称, 如果不指定会生成一个随机的队列
+		"",
+		r.Exchange,   // 交换器名称
+		false,
+		nil,
+		)
+
+	r.failOnErr(err, "failed to declare a queue")
+	err = r.channel.QueueBind(q.Name, "", r.Exchange, false, nil)
+	// 消费模型
+	messages, err := r.channel.Consume(q.Name, "", true, false, false, false, nil)
+	forever := make(chan bool)
+	go func() {
+		for d := range messages {
+			log.Printf("Received a message : %s", d.Body)
+		}
+	}()
+	fmt.Println("请按出 ctrl + c\n")
+	<-forever
+}
