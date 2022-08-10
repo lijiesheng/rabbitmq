@@ -3,7 +3,7 @@ package main
 import "rabbitmq/lib"
 
 /**
- * @Description
+ * @Description   多重绑定
  * @Author lijiesheng
  * @Date 2022/8/10 10:49 上午
  **/
