@@ -158,7 +158,7 @@ func (r *RabbitMQ) RecieveRouting() {
 		false,
 		false,
 		amqp.Table{
-			"x-message-ttl": 6000, // 消息过期时间（队列级别）,毫秒
+			//"x-message-ttl": 10000, // 消息过期时间（队列级别）,毫秒 , 这里也可以不写，在生成消息的时候指定   Expiration: "10000", // 消息过期时间,毫秒
 			"x-dead-letter-exchange":"dead-exchange_1", // 指定死信交换机
 			"x-dead-letter-routing-key": "dead-key_1", // 指定死信routing-key
 		})
