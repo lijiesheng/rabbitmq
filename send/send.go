@@ -19,7 +19,7 @@ import (
  **/
 func main() {
 	router1 := lib.NewRabbitMQRouting("normal_exchange_1", "normal_key_1")
-	for i := 0; i < 14; i++ {
+	for i := 0; i < 15000; i++ {
 		message := "msg : " + time.Now().Format("2006年1月2日 15:04:05")
 		fmt.Println(message)
 		time.Sleep(2 * time.Second)

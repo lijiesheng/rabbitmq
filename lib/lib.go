@@ -159,7 +159,7 @@ func (r *RabbitMQ) RecieveRouting() {
 		false,
 		amqp.Table{
 			//"x-message-ttl": 6000, // 消息过期时间（队列级别）,毫秒
-			"x-max-length" : 5,
+			//"x-max-length" : 5,
 			"x-dead-letter-exchange":"dead-exchange_1", // 指定死信交换机
 			"x-dead-letter-routing-key": "dead-key_1", // 指定死信routing-key
 		})
@@ -182,7 +182,14 @@ func (r *RabbitMQ) RecieveRouting() {
 	go func() {
 		for d := range messges {
 			log.Printf("Received a message: %s", d.Body)
-			d.Ack(false)
+			if "Hello kuteng one!  7" == string(d.Body) ||
+				"Hello kuteng one!  10" == string(d.Body) {
+				fmt.Println("  拒绝消息  ")
+				d.Reject(false)
+			} else {
+				d.Ack(false)
+			}
+
 		}
 	}()
 	fmt.Println("退出请按 CTRL+C\n")
