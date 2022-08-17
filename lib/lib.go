@@ -35,6 +35,19 @@ func NewRabbitMQ(queueName string, exchange string, key string) *RabbitMQ {
 	}
 }
 
+func NewRabbitMQTopic(exchangeName string, routingKey string) *RabbitMQ {
+	// 创建 rabbitmq 实例
+	rabbitmq := NewRabbitMQ("", exchangeName, routingKey)
+	var err error
+	// 获取 conn
+	rabbitmq.conn , err = amqp.Dial(rabbitmq.Mqurl)
+	rabbitmq.failOnErr(err, "failed to connect rabbitmq!")
+	//获取channel
+	rabbitmq.channel, err = rabbitmq.conn.Channel()
+	rabbitmq.failOnErr(err, "failed to open a channel")
+	return rabbitmq
+}
+
 // 使用完rabbitMQ 后， 断开 channel 和 connection
 func (r *RabbitMQ) Destory() {
 	r.channel.Close()
